@@ -1,0 +1,1184 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consulta de Zoneamento - Classificador de CNAE</title>
+    <!-- Inclui a biblioteca de CSS Tailwind para estilização rápida e responsiva -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Define a fonte principal para a página -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- PapaParse para análise de arquivos CSV -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .search-input:disabled {
+            background-color: #f3f4f6;
+            cursor: not-allowed;
+        }
+        /* Estilo para as tags de pesquisa */
+        .cnae-tag {
+            display: inline-flex;
+            align-items: center;
+            background-color: #e0e7ff; /* indigo-200 */
+            color: #3730a3; /* indigo-800 */
+            border-radius: 9999px; /* rounded-full */
+            padding: 0.25rem 0.75rem; /* py-1 px-3 */
+            margin: 0.125rem; /* m-0.5 */
+            font-size: 0.875rem; /* text-sm */
+            font-weight: 500; /* font-medium */
+            white-space: nowrap;
+        }
+        /* Estilo para o botão 'x' na tag */
+        .cnae-tag-close {
+            margin-left: 0.5rem; /* ml-2 */
+            cursor: pointer;
+            width: 1rem;
+            height: 1rem;
+            transition: color 0.15s ease-in-out;
+        }
+        .cnae-tag-close:hover {
+            color: #c7d2fe; /* indigo-300 */
+        }
+        /* Garante que o campo de input dentro do container de tags não tenha borda */
+        #cnae-tag-container input, #cnae-mei-tag-container input {
+            border: none !important;
+            box-shadow: none !important;
+            outline: none !important;
+            padding-left: 0.25rem;
+        }
+
+        /* Estilos para impressão */
+        @media print {
+            body {
+                background-color: #fff !important;
+                margin: 0;
+            }
+            .no-print {
+                display: none !important;
+            }
+            .printable-area {
+                visibility: visible;
+                position: static;
+                width: 100%;
+                padding: 0;
+            }
+            .printable-area * {
+                visibility: visible;
+            }
+            .print-table {
+                table-layout: fixed;
+                width: 100%;
+            }
+            .print-table th, .print-table td {
+                word-wrap: break-word;
+                white-space: normal;
+                border: 1px solid #ddd;
+                padding: 4px; /* Reduzido */
+            }
+            .print-table thead {
+                background-color: #eee !important;
+            }
+            .print-table .bg-green-100 {
+                background-color: #d1fae5 !important;
+                color: #065f46 !important;
+            }
+            .print-table .bg-red-100 {
+                background-color: #fee2e2 !important;
+                color: #991b1b !important;
+            }
+            .print-table .bg-yellow-100 {
+                background-color: #fef3c7 !important;
+                color: #b45309 !important;
+            }
+            .print-table tr {
+                page-break-inside: avoid;
+            }
+            @page {
+                size: A4;
+                margin: 1cm; /* Reduzido */
+                @bottom-right {
+                    content: "Página " counter(page) " de " counter(pages);
+                    font-family: 'Inter', sans-serif;
+                    font-size: 9pt;
+                    color: #666;
+                }
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <div class="container mx-auto p-4 sm:p-6 md:p-8">
+        <header class="text-center mb-8 flex justify-between items-center no-print">
+            <div>
+                <h1 class="text-3xl sm:text-4xl font-bold text-gray-900">Consulta de Zoneamento - Classificador de CNAE</h1>
+                <p class="text-md text-gray-600 mt-2">Baseado na Lei de Uso e Ocupação do Solo de Valinhos (Lei 6574/2023)</p>
+            </div>
+            <button id="print-button" class="bg-indigo-600 text-white px-4 py-2 rounded-md shadow-sm hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition duration-150 ease-in-out" disabled>Imprimir</button>
+        </header>
+
+        <main>
+            <!-- Seção de Busca por Inscrição -->
+            <div class="p-4 rounded-lg border border-gray-200 shadow-sm mb-6 bg-white no-print">
+                <h2 class="text-lg font-semibold text-gray-800 mb-4">Buscar por Inscrição Imobiliária (IPTU) ou Endereço</h2>
+                <label for="inscricao-search" class="block text-sm font-medium text-gray-700 mb-2">Digite uma inscrição ou endereço:</label>
+                <div class="relative">
+                    <input type="text" id="inscricao-search" placeholder="Ex: 12345 ou nome da rua" class="w-full px-4 py-3 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 ease-in-out search-input" disabled>
+                    <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                        <svg class="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1 1 21.75 8.25Z" /></svg>
+                    </div>
+                </div>
+                <p id="inscricao-feedback" class="text-xs mt-1 h-4"></p>
+            </div>
+
+            <!-- Tabela de Resultados da Inscrição -->
+            <div id="results-inscricao-section" class="hidden">
+                <h3 class="text-lg font-semibold text-gray-800 mb-3">Detalhes da Inscrição</h3>
+                <div class="bg-white shadow-md rounded-lg overflow-hidden mb-6">
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-100">
+                                <tr>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Inscrição</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Endereço</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Área Terreno</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Área Edificada</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Zonas</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Atividades Permitidas</th>
+                                </tr>
+                            </thead>
+                            <tbody id="results-table-inscricao" class="bg-white divide-y divide-gray-200">
+                                <!-- As linhas serão inseridas aqui pelo JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Seção de Busca por CNAE -->
+            <div class="p-4 rounded-lg border border-gray-200 shadow-sm mb-6 bg-white no-print">
+                <h2 class="text-lg font-semibold text-gray-800 mb-4">Buscar por CNAE</h2>
+                <label for="cnae-search-input" class="block text-sm font-medium text-gray-700 mb-2">Digite um CNAE ou palavra-chave:</label>
+                <div id="cnae-tag-container" class="w-full flex items-center flex-wrap px-2 border border-gray-300 rounded-md shadow-sm bg-white focus-within:ring-1 focus-within:ring-indigo-500 focus-within:border-indigo-500">
+                    <input type="text" id="cnae-search-input" placeholder="Ex: 8610101 ou clínica" class="flex-grow py-3 search-input" disabled>
+                </div>
+            </div>
+
+            <!-- Tabela de Resultados do CNAE -->
+            <div id="results-cnae-section" class="hidden">
+                <div class="p-4 bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 rounded-lg shadow-sm mb-6">
+                    <p class="text-sm">A consulta de compatibilidade de atividades possui caráter meramente informativo. Os processos para abertura, alteração e encerramento de empresas devem ser realizados junto ao VRE-REDESIM. Atividades consideradas compatíveis poderão estar sujeitas a restrições adicionais nas etapas de licenciamento ou inscrição municipal. Para o Microempreendedor Individual (MEI), poderão ser avaliadas condições específicas, conforme a legislação vigente. </p>
+                </div>
+                <div class="flex justify-between items-baseline mb-3 px-1">
+                    <h3 class="text-lg font-semibold text-gray-800">Resultados da Classificação de CNAE</h3>
+                    <span id="cnae-results-count" class="text-sm font-medium text-gray-500"></span>
+                </div>
+                <div class="bg-white shadow-md rounded-lg overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-100">
+                                <tr>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CNAE</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descrição</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Incomodidade</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Observação</th>
+                                    <th id="compatibilidade-header" scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="results-table-cnae" class="bg-white divide-y divide-gray-200">
+                                <!-- As linhas serão inseridas aqui pelo JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Seção de Busca por CNAE MEI -->
+            <div class="p-4 rounded-lg border border-gray-200 shadow-sm mb-6 bg-white no-print">
+                <h2 class="text-lg font-semibold text-gray-800 mb-4">Buscar por CNAE (MEI)</h2>
+                <label for="cnae-mei-search-input" class="block text-sm font-medium text-gray-700 mb-2">Digite um CNAE ou palavra-chave (exclusivo para MEI):</label>
+                <div id="cnae-mei-tag-container" class="w-full flex items-center flex-wrap px-2 border border-gray-300 rounded-md shadow-sm bg-white focus-within:ring-1 focus-within:ring-indigo-500 focus-within:border-indigo-500">
+                    <input type="text" id="cnae-mei-search-input" placeholder="Ex: 4789099 ou comércio" class="flex-grow py-3 search-input" disabled>
+                </div>
+            </div>
+
+            <!-- Tabela de Resultados do CNAE MEI -->
+            <div id="results-cnae-mei-section" class="hidden">
+                 <div class="p-4 bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 rounded-lg shadow-sm mb-6">
+                    <p class="text-sm">A consulta de compatibilidade de atividades para MEI possui caráter meramente informativo. Atividades consideradas compatíveis poderão estar sujeitas a restrições adicionais. A dispensa de alvarás e licenças não desobriga o MEI de cumprir as normas estabelecidas pelo poder público.</p>
+                </div>
+                <div class="flex justify-between items-baseline mb-3 px-1">
+                    <h3 class="text-lg font-semibold text-gray-800">Resultados da Classificação de CNAE (MEI)</h3>
+                    <span id="cnae-mei-results-count" class="text-sm font-medium text-gray-500"></span>
+                </div>
+                <div class="bg-white shadow-md rounded-lg overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-100">
+                                <tr>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CNAE</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descrição</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Incomodidade</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Observação</th>
+                                    <th id="compatibilidade-mei-header" scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="results-table-cnae-mei" class="bg-white divide-y divide-gray-200">
+                                <!-- As linhas serão inseridas aqui pelo JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Seção de Busca por Zona -->
+            <div class="p-4 rounded-lg border border-gray-200 shadow-sm mb-6 bg-white no-print">
+                <h2 class="text-lg font-semibold text-gray-800 mb-4">Classificar por Zona</h2>
+                <label for="zone-select" class="block text-sm font-medium text-gray-700 mb-2">Selecione uma zona:</label>
+                <select id="zone-select" class="w-full px-4 py-3 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 ease-in-out search-input" disabled>
+                    <option value="">Selecione uma zona</option>
+                </select>
+                <div id="zone-info" class="text-sm text-gray-600 mt-2 hidden">
+                    <p>Atividades permitidas para esta zona: <span id="zone-allowed-activities" class="font-semibold text-gray-800"></span></p>
+                </div>
+            </div>
+            
+            <!-- Tabela de Resultados por Zona -->
+            <div id="results-zone-section" class="hidden">
+                <div class="p-4 bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 rounded-lg shadow-sm mb-6">
+                    <p class="text-sm">A consulta de compatibilidade das atividades é meramente informativa. Para a abertura, alteração e encerramento de empresas deverão ser realizados os processo junto ao VRE-REDESIM. Atividades consideradas compativeis poderão ter restrições adicionais nas etapas de licenciamento ou inscrição municipal. Para MEI (Microempreendedor Individual) poderá ser avaliada condição especifica, conforme legislação vigente.  </p>
+                </div>
+                <div class="flex justify-between items-baseline mb-3 px-1">
+                    <h3 class="text-lg font-semibold text-gray-800">CNAEs Compatíveis com a Zona <span id="zone-display-name" class="text-indigo-600 font-bold"></span></h3>
+                    <span id="zone-results-count" class="text-sm font-medium text-gray-500"></span>
+                </div>
+                <div class="bg-white shadow-md rounded-lg overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-100">
+                                <tr>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CNAE</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descrição</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Incomodidade</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Observação</th>
+                                </tr>
+                            </thead>
+                            <tbody id="results-table-zone" class="bg-white divide-y divide-gray-200">
+                                <!-- As linhas serão inseridas aqui pelo JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="text-center p-8 text-gray-500 no-print">
+                <p id="status-message">A carregar a base de dados. Por favor, aguarde...</p>
+                 <p id="status-message-mei"></p>
+            </div>
+        </main>
+
+        <footer class="text-center mt-12 text-sm text-gray-500 no-print">
+            <p>&copy; 2025 Classificador de CNAE. Todos os direitos reservados. Prefeitura Municipal de Valinhos.</p>
+        </footer>
+    </div>
+    
+    <div id="printable-area" class="printable-area hidden"></div>
+
+    <script>
+        // Armazenamento de dados globais
+        let cnaeData = [];
+        let cnaeMeiData = [];
+        let inscricaoDataMap = new Map();
+        let inscricaoDataArray = [];
+        let cnaeSearchTags = [];
+        let cnaeMeiSearchTags = [];
+        let activeInscricaoData = null;
+        
+        // Mapeamento de níveis de incomodidade para facilitar a comparação
+        const levelMap = {
+            '0': 0, '1': 1, '2': 2, '3': 3, '4': 4, '5': 5,
+            'A0': 0, 'A1': 1, 'A2': 2, 'A3': 3, 'A4': 4, 'A5': 5
+        };
+
+        // Mapeamento de zonas combinadas para zonas-base
+        const zoneMapping = {
+            'ZC4_ZC2': 'ZC4', 'ZC4_ZC3': 'ZC4', 'ZRRM1_ZC1': 'ZRRM1', 'ZDE2_ZC1': 'ZDE2',
+            'ZDE2_ZC3': 'ZDE2', 'ZM_ZC2': 'ZM', 'ZM_ZC1.5': 'ZM', 'ZM_ZC3': 'ZM',
+            'ZC4_ZC1.5': 'ZC4', 'ZDE1_ZC1.5': 'ZDE1', 'ZDE1_ZC3': 'ZDE1',
+            'ZRRM1_ZC3': 'ZRRM1', 'ZRRM2_ZC1': 'ZRRM2', 'ZDE2.5_ZC3': 'ZDE2.5',
+            'ZRRM1_ZC2': 'ZRRM1', 'ZRRM1_ZC1.5': 'ZRRM1', 'ZDE2_ZC1.5': 'ZDE2',
+            'ZDE1_ZC1': 'ZDE1', '0_ZC1': 'ZRRM1', 'ZDE1_ZC2': 'ZDE1',
+            'ZEIS1_ZC2': 'ZEIS1', '0_ZC2': 'ZRRM1', '0_ZC3': 'ZRRM1', '0_ZC1.5': 'ZRRM1'
+        };
+
+       // Mapeamento para descrições de zona
+        const zoneDescriptions = {
+        // Zonas Originais
+            'ZC1': 'ZONA DE CENTRALIDADE 1',
+            'ZC1.5': 'ZONA DE CENTRALIDADE 1.5',
+            'ZC2': 'ZONA DE CENTRALIDADE 2',
+            'ZC3': 'ZONA DE CENTRALIDADE 3',
+            'ZC4': 'ZONA DE CENTRALIDADE 4',
+            'ZDE1': 'ZONA DE DESENVOLVIMENTO ECONOMICO 1',
+            'ZDE1.5': 'ZONA DE DESENVOLVIMENTO ECONOMICO 1.5',
+            'ZDE2': 'ZONA DE DESENVOLVIMENTO ECONOMICO 2',
+            'ZDE2.5': 'ZONA DE DESENVOLVIMENTO ECONOMICO 2.5',
+            'ZEIS1': 'ZONA ESPECIAL DE INTERESSE SOCIAL 1',
+            'ZEIS2': 'ZONA ESPECIAL DE INTERESSE SOCIAL 2',
+            'ZM': 'ZONA MISTA',
+            'ZRRM1': 'ZONA RESIDENCIAL DE BAIXA DENSIDADE E RECUPERACAO DE MANANCIAIS 1',
+            'ZRRM2': 'ZONA RESIDENCIAL DE BAIXA DENSidade E RECUPERACAO DE MANANCIAIS 2',
+            'ZR1': 'ZONA RESIDENCIAL DE BAIXA DENSIDADE 1',
+        
+            // Zonas Adicionadas
+            'ZC4_ZC2': 'ZONA DE CENTRALIDADE 2 E 4',
+            'ZC4_ZC3': 'ZONA DE CENTRALIDADE 3 E 4',
+            'ZRRM1_ZC1': 'ZONA RESIDENCIAL DE BAIXA DENSIDADE E RECUPERACAO DE MANANCIAIS 1 - ZONA DE CENTRALIDADE 1',
+            'ZDE2_ZC1': 'ZONA DE DESENVOLVIMENTO ECONOMICO 2 - ZONA DE CENTRALIDADE 1',
+            'ZDE2_ZC3': 'ZONA DE DESENVOLVIMENTO ECONOMICO 2 - ZONA DE CENTRALIDADE 3',
+            'ZM_ZC2': 'ZONA MISTA - ZONA DE CENTRALIDADE 2',
+            'ZM_ZC1.5': 'ZONA MISTA - ZONA DE CENTRALIDADE 1.5',
+            'ZM_ZC3': 'ZONA MISTA - ZONA DE CENTRALIDADE 3',
+            'ZC4_ZC1.5': 'ZONA DE CENTRALIDADE 1.5 E 4',
+            'ZDE1_ZC1.5': 'ZONA DE DESENVOLVIMENTO ECONOMICO 1 - ZONA DE CENTRALIDADE 1.5',
+            'ZDE1_ZC3': 'ZONA DE DESENVOLVIMENTO ECONOMICO 1 - ZONA DE CENTRALIDADE 3',
+            'ZM_ZC1': 'ZONA MISTA - ZONA DE CENTRALIDADE 1',
+            'ZRRM1_ZC3': 'ZONA RESIDENCIAL DE BAIXA DENSIDADE E RECUPERACAO DE MANANCIAIS 1 - ZONA DE CENTRALIDADE 3',
+            'ZRRM2_ZC1': 'ZONA RESIDENCIAL DE BAIXA DENSIDADE E RECUPERACAO DE MANANCIAIS 2 - ZONA DE CENTRALIDADE 1',
+            'ZDE2.5_ZC3': 'ZONA DE DESENVOLVIMENTO ECONOMICO 2.5 - ZONA DE CENTRALIDADE 3',
+            'ZRRM1_ZC2': 'ZONA RESIDENCIAL DE BAIXA DENSIDADE E RECUPERACAO DE MANANCIAIS 1 - ZONA DE CENTRALIDADE 2',
+            'ZRRM1_ZC1.5': 'ZONA RESIDENCIAL DE BAIXA DENSIDADE E RECUPERACAO DE MANANCIAIS 1 - ZONA DE CENTRALIDADE 1',
+            'ZDE2_ZC1.5': 'ZONA DE DESENVOLVIMENTO ECONOMICO 2 - ZONA DE CENTRALIDADE 1.5',
+            'ZDE1_ZC1': 'ZONA DE DESENVOLVIMENTO ECONOMICO 1 - ZONA DE CENTRALIDADE 1',
+            '0_ZC1': 'RURAL - ZONA DE CENTRALIDADE 1',
+            'ZDE1_ZC2': 'ZONA DE DESENVOLVIMENTO ECONOMICO 1 - ZONA DE CENTRALIDADE 2',
+            'ZEIS1_ZC2': 'ZONA ESPECIAL DE INTERESSE SOCIAL 1 - ZONA DE CENTRALIDADE 2',
+            '0_ZC2': 'RURAL - ZONA DE CENTRALIDADE 2',
+            '0_ZC3': 'RURAL - ZONA DE CENTRALIDADE 3',
+            '0_ZC1.5': 'RURAL - ZONA DE CENTRALIDADE 1.5',
+            '_': 'NÃO CADASTRADO',
+            '3B2_': 'NÃO CADASTRADO'
+};
+
+        // Fonte de dados consolidada para as definições de zona
+        const simplifiedZoneToCategoryMapping = {
+            'ZC1': ['A2'],
+            'ZC1.5': ['A2'],
+            'ZC2': ['A2'],
+            'ZC3': ['A3'],
+            'ZC4': ['A2'],
+            'ZDE1': ['A3'],
+            'ZDE1.5': ['A3'],
+            'ZDE2': ['A3'],
+            'ZDE2.5': ['A4'],
+            'ZEIS1': ['A1'],
+            'ZEIS2': ['A1'],
+            'ZM': ['A1'],
+            'ZRRM1': ['A0'],
+            'ZRRM2': ['A0'],
+            'ZR1': ['A0']
+        };
+
+        // CORREÇÃO: Lista de zonas onde a atividade uR (incomodidade 0) é permitida.
+        const uRAllowedZones = ['ZR1', 'ZRRM1', 'ZRRM2', 'ZM', 'ZEIS1', 'ZEIS2', 'MDO1', 'MDO2'];
+
+        // Seletores de elementos do DOM
+        const inscricaoSearchInput = document.getElementById('inscricao-search');
+        const cnaeSearchInput = document.getElementById('cnae-search-input');
+        const cnaeTagContainer = document.getElementById('cnae-tag-container');
+        const inscricaoFeedback = document.getElementById('inscricao-feedback');
+        const resultsTableInscricao = document.getElementById('results-table-inscricao');
+        const resultsTableCnae = document.getElementById('results-table-cnae');
+        const statusMessage = document.getElementById('status-message');
+        const statusMessageMei = document.getElementById('status-message-mei');
+        const resultsInscricaoSection = document.getElementById('results-inscricao-section');
+        const resultsCnaeSection = document.getElementById('results-cnae-section');
+        const cnaeResultsCountSpan = document.getElementById('cnae-results-count');
+        const compatibilidadeHeader = document.getElementById('compatibilidade-header');
+        
+        const cnaeMeiSearchInput = document.getElementById('cnae-mei-search-input');
+        const cnaeMeiTagContainer = document.getElementById('cnae-mei-tag-container');
+        const resultsTableCnaeMei = document.getElementById('results-table-cnae-mei');
+        const resultsCnaeMeiSection = document.getElementById('results-cnae-mei-section');
+        const cnaeMeiResultsCountSpan = document.getElementById('cnae-mei-results-count');
+        const compatibilidadeMeiHeader = document.getElementById('compatibilidade-mei-header');
+
+        const zoneSelect = document.getElementById('zone-select');
+        const zoneInfo = document.getElementById('zone-info');
+        const zoneAllowedActivities = document.getElementById('zone-allowed-activities');
+        const resultsTableZone = document.getElementById('results-table-zone');
+        const resultsZoneSection = document.getElementById('results-zone-section');
+        const zoneDisplayName = document.getElementById('zone-display-name');
+        const zoneResultsCount = document.getElementById('zone-results-count');
+        
+        const printButton = document.getElementById('print-button');
+        const printableArea = document.getElementById('printable-area');
+        
+        // Função auxiliar para obter valor de um item, tentando várias chaves possíveis
+        function getValueFromItem(item, possibleKeys) {
+            for (const key of possibleKeys) {
+                if (item && item[key] !== undefined && item[key] !== null) {
+                    return item[key];
+                }
+            }
+            return '';
+        }
+
+        // Mapeamento da regra de exibição das atividades permitidas para inscrição
+        function formatarAtividadesPermitidas(grupoAtv, zonaCode) {
+            let activities = '';
+            switch (grupoAtv) {
+                case 'A0': activities = 'uR'; break;
+                case 'A1': activities = 'uR e nR1'; break;
+                case 'A2': activities = 'uR, nR1 e nR2'; break;
+                case 'A3': activities = 'uR, nR1, nR2 e nR3'; break;
+                case 'A4': activities = 'uR, nR1, nR2, nR3 e nR4'; break;
+                default: return 'Grupo de Atividade não encontrado';
+            }
+
+            // CORREÇÃO: Remove 'uR' se a zona não estiver na lista de permissão.
+            const baseZone = zoneMapping[zonaCode] || zonaCode;
+            if (!uRAllowedZones.includes(baseZone)) {
+                if (activities.startsWith('uR, ')) {
+                    return activities.substring(4); // Remove 'uR, '
+                } else if (activities.startsWith('uR e ')) {
+                    return activities.substring(5); // Remove 'uR e '
+                } else if (activities === 'uR') {
+                    return 'Nenhuma'; // Se for apenas uR, retorna 'Nenhuma'
+                }
+            }
+            
+            return activities;
+        }
+        
+        // Mapeamento da regra de exibição da incomodidade para CNAE
+        function formatarIncomodidadeCnae(incomodidade) {
+            switch (String(incomodidade)) {
+                case '0': return 'uR';
+                case '1': return 'nR1';
+                case '2': return 'nR2';
+                case '3': return 'nR3';
+                case '4': return 'nR4';
+                case '5': return 'necessario avaliação de comissão especial';
+                default: return 'necessario avaliação de comissão especial';
+            }
+        }
+
+        // Função para buscar e exibir os detalhes de uma inscrição
+        function searchByInscricao() {
+            const query = inscricaoSearchInput.value.trim();
+            resultsTableInscricao.innerHTML = '';
+            inscricaoFeedback.textContent = '';
+            
+            // Limpa as outras buscas
+            cnaeSearchInput.value = '';
+            cnaeSearchTags = [];
+            renderCnaeTags();
+            cnaeMeiSearchInput.value = '';
+            cnaeMeiSearchTags = [];
+            renderCnaeMeiTags();
+            zoneSelect.value = '';
+            resultsZoneSection.classList.add('hidden');
+            zoneInfo.classList.add('hidden');
+            
+            if (query === '') {
+                resultsInscricaoSection.classList.add('hidden');
+                activeInscricaoData = null;
+                compatibilidadeHeader.classList.add('hidden');
+                compatibilidadeMeiHeader.classList.add('hidden');
+                filterCnaes();
+                filterCnaesMei();
+                printButton.disabled = true;
+                return;
+            }
+
+            const lowerCaseQuery = query.toLowerCase();
+            let allResults = [];
+
+            // Tenta busca por inscrição exata primeiro (mais rápido)
+            if (inscricaoDataMap.has(query)) {
+                allResults.push(inscricaoDataMap.get(query));
+            } else {
+                if (query.length < 3) {
+                    inscricaoFeedback.textContent = 'Digite pelo menos 3 caracteres para buscar por endereço.';
+                    inscricaoFeedback.className = 'text-xs mt-1 h-4 text-gray-500';
+                    resultsInscricaoSection.classList.add('hidden');
+                    return;
+                }
+                // Se não for inscrição exata, busca no array por inscrição ou endereço
+                allResults = inscricaoDataArray.filter(item => {
+                    const endereco = (item.endereco || '').toLowerCase();
+                    const inscricao = (item.inscricao || '').toString();
+                    return inscricao.includes(lowerCaseQuery) || endereco.includes(lowerCaseQuery);
+                });
+            }
+            
+            const totalResultsCount = allResults.length;
+            const results = allResults.slice(0, 5); // Limita os resultados a 5
+
+            if (results.length > 0) {
+                resultsInscricaoSection.classList.remove('hidden');
+                
+                if (totalResultsCount === 1) {
+                    activeInscricaoData = results[0];
+                    inscricaoFeedback.textContent = 'Resultado encontrado! Agora você pode buscar CNAEs para verificar a compatibilidade.';
+                    inscricaoFeedback.className = 'text-xs mt-1 h-4 text-green-600 font-semibold';
+                    
+                    cnaeSearchInput.disabled = false;
+                    cnaeMeiSearchInput.disabled = false;
+                    compatibilidadeHeader.classList.remove('hidden');
+                    compatibilidadeHeader.textContent = `COMPATIBILIDADE`;
+                    compatibilidadeMeiHeader.classList.remove('hidden');
+                    compatibilidadeMeiHeader.textContent = `COMPATIBILIDADE`;
+                } else {
+                    activeInscricaoData = null;
+                    if (totalResultsCount > 5) {
+                        inscricaoFeedback.textContent = `Exibindo os 5 primeiros de ${totalResultsCount} resultados. Refine sua busca ou use a inscrição exata.`;
+                    } else {
+                         inscricaoFeedback.textContent = `${totalResultsCount} resultados encontrados. Para verificar a compatibilidade, use a inscrição exata.`;
+                    }
+                    inscricaoFeedback.className = 'text-xs mt-1 h-4 text-blue-600 font-semibold';
+                    compatibilidadeHeader.classList.add('hidden');
+                    compatibilidadeMeiHeader.classList.add('hidden');
+                }
+
+                results.forEach(data => {
+                    const zonaCode = data.zone;
+                    const zonaDescricao = zoneDescriptions[zonaCode] || zoneDescriptions[zoneMapping[zonaCode]] || 'Descrição não disponível';
+                    const grupoAtv = data.grupoAtv || '';
+                    const atividadesPermitidasDisplay = formatarAtividadesPermitidas(grupoAtv, zonaCode);
+
+                    const row = document.createElement('tr');
+                    row.className = 'hover:bg-gray-50 transition duration-150 ease-in-out';
+                    row.innerHTML = `
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">${data.inscricao}</td>
+                        <td class="px-6 py-4 whitespace-normal text-sm">${data.endereco || '-'}</td>
+                        <td class="px-6 py-4 whitespace-normal text-sm">${data.areaTerreno || '-'}</td>
+                        <td class="px-6 py-4 whitespace-normal text-sm">${data.areaEdificada || '-'}</td>
+                        <td class="px-6 py-4 whitespace-normal text-sm"><span class="font-semibold">${zonaCode}</span> - ${zonaDescricao}</td>
+                        <td class="px-6 py-4 whitespace-normal text-sm">${atividadesPermitidasDisplay}</td>
+                    `;
+                    resultsTableInscricao.appendChild(row);
+                });
+                
+                printButton.disabled = false;
+
+            } else {
+                activeInscricaoData = null;
+                inscricaoFeedback.textContent = 'Nenhum resultado encontrado. Verifique o termo digitado.';
+                inscricaoFeedback.className = 'text-xs mt-1 h-4 text-red-600';
+                resultsInscricaoSection.classList.add('hidden');
+                compatibilidadeHeader.classList.add('hidden');
+                compatibilidadeMeiHeader.classList.add('hidden');
+                printButton.disabled = true;
+            }
+
+            // Atualiza as tabelas de CNAE com base no novo estado (se há ou não um 'activeInscricaoData')
+            filterCnaes();
+            filterCnaesMei();
+        }
+
+        // Função para renderizar as tags de busca do CNAE
+        function renderCnaeTags() {
+            const existingTags = cnaeTagContainer.querySelectorAll('.cnae-tag');
+            existingTags.forEach(tag => tag.remove());
+            
+            cnaeSearchTags.forEach(tagText => {
+                const tagElement = document.createElement('span');
+                tagElement.className = 'cnae-tag';
+                tagElement.textContent = tagText;
+                const closeButton = document.createElement('span');
+                closeButton.className = 'cnae-tag-close';
+                closeButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>`;
+                closeButton.onclick = () => {
+                    cnaeSearchTags = cnaeSearchTags.filter(t => t !== tagText);
+                    renderCnaeTags();
+                    filterCnaes();
+                };
+                tagElement.appendChild(closeButton);
+                cnaeTagContainer.insertBefore(tagElement, cnaeSearchInput);
+            });
+        }
+        
+        // Função para renderizar as tags de busca do CNAE MEI
+        function renderCnaeMeiTags() {
+            const existingTags = cnaeMeiTagContainer.querySelectorAll('.cnae-tag');
+            existingTags.forEach(tag => tag.remove());
+            
+            cnaeMeiSearchTags.forEach(tagText => {
+                const tagElement = document.createElement('span');
+                tagElement.className = 'cnae-tag';
+                tagElement.textContent = tagText;
+                const closeButton = document.createElement('span');
+                closeButton.className = 'cnae-tag-close';
+                closeButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>`;
+                closeButton.onclick = () => {
+                    cnaeMeiSearchTags = cnaeMeiSearchTags.filter(t => t !== tagText);
+                    renderCnaeMeiTags();
+                    filterCnaesMei();
+                };
+                tagElement.appendChild(closeButton);
+                cnaeMeiTagContainer.insertBefore(tagElement, cnaeMeiSearchInput);
+            });
+        }
+
+        // Função para buscar e exibir os detalhes de um CNAE com tags
+        function filterCnaes() {
+            resultsTableCnae.innerHTML = '';
+            
+            const hasQuery = cnaeSearchTags.length > 0 || cnaeSearchInput.value.trim() !== '';
+            if (!hasQuery) {
+                resultsCnaeSection.classList.add('hidden');
+                cnaeResultsCountSpan.textContent = '';
+                printButton.disabled = resultsInscricaoSection.classList.contains('hidden') && resultsCnaeMeiSection.classList.contains('hidden') && resultsZoneSection.classList.contains('hidden');
+                return;
+            }
+            
+            const currentQuery = cnaeSearchInput.value.toLowerCase().trim();
+            const tagsToFilter = currentQuery ? [...cnaeSearchTags, currentQuery] : cnaeSearchTags;
+
+            const filteredCnaes = cnaeData.filter(item => {
+                const cnae = getValueFromItem(item, ['CNAE']).toString().toLowerCase();
+                const descricao = getValueFromItem(item, ['DESCRIÇÃO']).toLowerCase();
+                const obs = getValueFromItem(item, ['OBS']).toLowerCase();
+
+                return tagsToFilter.some(tag => {
+                    const query = tag.toLowerCase();
+                    return cnae.includes(query) || descricao.includes(query) || obs.includes(query);
+                });
+            });
+
+            if (filteredCnaes.length > 0) {
+                resultsCnaeSection.classList.remove('hidden');
+                cnaeResultsCountSpan.textContent = `Encontrados ${filteredCnaes.length} registros.`;
+                filteredCnaes.forEach(item => {
+                    const row = document.createElement('tr');
+                    const incomodidade = getValueFromItem(item, ['INCOMODIDADE']);
+                    const incomodidadeDisplay = formatarIncomodidadeCnae(incomodidade);
+
+                    let compatibilidadeCell = '';
+                    if (activeInscricaoData) {
+                        const cnaeIncomodidadeLevel = parseInt(incomodidade, 10);
+                        const zonaGrupoAtvLevel = levelMap[activeInscricaoData.grupoAtv];
+                        
+                        let compatibilidadeText = '';
+                        let compatibilidadeClass = '';
+
+                        const baseZone = zoneMapping[activeInscricaoData.zone] || activeInscricaoData.zone;
+                        if (cnaeIncomodidadeLevel === 0 && !uRAllowedZones.includes(baseZone)) {
+                             compatibilidadeText = 'NÃO COMPATÍVEL';
+                             compatibilidadeClass = 'bg-red-100 text-red-800';
+                        } else if (String(incomodidade) === '5') {
+                            compatibilidadeText = 'ANÁLISE';
+                            compatibilidadeClass = 'bg-yellow-100 text-yellow-800';
+                        } else {
+                            const isCompatible = cnaeIncomodidadeLevel <= zonaGrupoAtvLevel;
+                            compatibilidadeText = isCompatible ? 'COMPATÍVEL' : 'NÃO COMPATÍVEL';
+                            compatibilidadeClass = isCompatible ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+                        }
+
+                        compatibilidadeCell = `<td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${compatibilidadeClass}">
+                                ${compatibilidadeText}
+                            </span>
+                        </td>`;
+                    } else {
+                        compatibilidadeHeader.classList.add('hidden');
+                    }
+                    
+                    row.className = 'hover:bg-gray-50 transition duration-150 ease-in-out';
+                    row.innerHTML = `
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">${getValueFromItem(item, ['CNAE'])}</td>
+                        <td class="px-6 py-4 whitespace-normal text-sm">${getValueFromItem(item, ['DESCRIÇÃO'])}</td>
+                        <td class="px-6 py-4 whitespace-normal text-sm">${incomodidadeDisplay}</td>
+                        <td class="px-6 py-4 whitespace-normal text-sm">${getValueFromItem(item, ['OBS'])}</td>
+                        ${compatibilidadeCell}
+                    `;
+                    resultsTableCnae.appendChild(row);
+                });
+                printButton.disabled = false;
+            } else {
+                resultsCnaeSection.classList.add('hidden');
+                cnaeResultsCountSpan.textContent = 'Nenhum registro encontrado.';
+                printButton.disabled = resultsInscricaoSection.classList.contains('hidden') && resultsCnaeMeiSection.classList.contains('hidden') && resultsZoneSection.classList.contains('hidden');
+            }
+        }
+        
+        // Função para buscar e exibir os detalhes de um CNAE MEI com tags
+        function filterCnaesMei() {
+            resultsTableCnaeMei.innerHTML = '';
+            
+            const hasQuery = cnaeMeiSearchTags.length > 0 || cnaeMeiSearchInput.value.trim() !== '';
+            if (!hasQuery) {
+                resultsCnaeMeiSection.classList.add('hidden');
+                cnaeMeiResultsCountSpan.textContent = '';
+                printButton.disabled = resultsInscricaoSection.classList.contains('hidden') && resultsCnaeSection.classList.contains('hidden') && resultsZoneSection.classList.contains('hidden');
+                return;
+            }
+            
+            const currentQuery = cnaeMeiSearchInput.value.toLowerCase().trim();
+            const tagsToFilter = currentQuery ? [...cnaeMeiSearchTags, currentQuery] : cnaeMeiSearchTags;
+
+            const filteredCnaes = cnaeMeiData.filter(item => {
+                const cnae = getValueFromItem(item, ['CNAE']).toString().toLowerCase();
+                const descricao = getValueFromItem(item, ['DESCRIÇÃO']).toLowerCase();
+                const obs = getValueFromItem(item, ['OBS']).toLowerCase();
+
+                return tagsToFilter.some(tag => {
+                    const query = tag.toLowerCase();
+                    return cnae.includes(query) || descricao.includes(query) || obs.includes(query);
+                });
+            });
+
+            if (filteredCnaes.length > 0) {
+                resultsCnaeMeiSection.classList.remove('hidden');
+                cnaeMeiResultsCountSpan.textContent = `Encontrados ${filteredCnaes.length} registros.`;
+                filteredCnaes.forEach(item => {
+                    const row = document.createElement('tr');
+                    const incomodidade = getValueFromItem(item, ['INCOMODIDADE']);
+                    const incomodidadeDisplay = formatarIncomodidadeCnae(incomodidade);
+
+                    let compatibilidadeCell = '';
+                    if (activeInscricaoData) {
+                        const cnaeIncomodidadeLevel = parseInt(incomodidade, 10);
+                        const zonaGrupoAtvLevel = levelMap[activeInscricaoData.grupoAtv];
+                        
+                        let compatibilidadeText = '';
+                        let compatibilidadeClass = '';
+
+                        const baseZone = zoneMapping[activeInscricaoData.zone] || activeInscricaoData.zone;
+                        if (cnaeIncomodidadeLevel === 0 && !uRAllowedZones.includes(baseZone)) {
+                             compatibilidadeText = 'NÃO COMPATÍVEL';
+                             compatibilidadeClass = 'bg-red-100 text-red-800';
+                        } else if (String(incomodidade) === '5') {
+                            compatibilidadeText = 'ANÁLISE';
+                            compatibilidadeClass = 'bg-yellow-100 text-yellow-800';
+                        } else {
+                            const isCompatible = cnaeIncomodidadeLevel <= zonaGrupoAtvLevel;
+                            compatibilidadeText = isCompatible ? 'COMPATÍVEL' : 'NÃO COMPATÍVEL';
+                            compatibilidadeClass = isCompatible ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+                        }
+
+                        compatibilidadeCell = `<td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${compatibilidadeClass}">
+                                ${compatibilidadeText}
+                            </span>
+                        </td>`;
+                    } else {
+                        compatibilidadeMeiHeader.classList.add('hidden');
+                    }
+                    
+                    row.className = 'hover:bg-gray-50 transition duration-150 ease-in-out';
+                    row.innerHTML = `
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">${getValueFromItem(item, ['CNAE'])}</td>
+                        <td class="px-6 py-4 whitespace-normal text-sm">${getValueFromItem(item, ['DESCRIÇÃO'])}</td>
+                        <td class="px-6 py-4 whitespace-normal text-sm">${incomodidadeDisplay}</td>
+                        <td class="px-6 py-4 whitespace-normal text-sm">${getValueFromItem(item, ['OBS'])}</td>
+                        ${compatibilidadeCell}
+                    `;
+                    resultsTableCnaeMei.appendChild(row);
+                });
+                printButton.disabled = false;
+            } else {
+                resultsCnaeMeiSection.classList.add('hidden');
+                cnaeMeiResultsCountSpan.textContent = 'Nenhum registro encontrado.';
+                printButton.disabled = resultsInscricaoSection.classList.contains('hidden') && resultsCnaeSection.classList.contains('hidden') && resultsZoneSection.classList.contains('hidden');
+            }
+        }
+
+        // Nova função para buscar CNAEs compatíveis com uma zona
+        function searchByZone() {
+            const zoneQuery = zoneSelect.value.trim();
+            resultsTableZone.innerHTML = '';
+            resultsZoneSection.classList.add('hidden');
+            zoneDisplayName.textContent = '';
+            zoneResultsCount.textContent = '';
+            zoneInfo.classList.add('hidden');
+            
+            // Limpa as outras buscas
+            inscricaoSearchInput.value = '';
+            activeInscricaoData = null;
+            resultsInscricaoSection.classList.add('hidden');
+            cnaeSearchTags = [];
+            renderCnaeTags();
+            filterCnaes();
+            cnaeMeiSearchTags = [];
+            renderCnaeMeiTags();
+            filterCnaesMei();
+
+            if (zoneQuery === '') {
+                printButton.disabled = true;
+                return;
+            }
+
+            const allowedGroups = simplifiedZoneToCategoryMapping[zoneQuery] || [];
+            
+            zoneInfo.classList.remove('hidden');
+            const allowedGroupsString = allowedGroups.map(group => formatarAtividadesPermitidas(group, zoneQuery)).join(', ');
+            zoneAllowedActivities.textContent = allowedGroupsString || 'Nenhuma';
+
+            const maxAllowedLevel = allowedGroups.reduce((max, group) => {
+                const level = levelMap[group];
+                return level > max ? level : max;
+            }, -1);
+            
+            const filteredCnaes = cnaeData.filter(item => {
+                const incomodidade = getValueFromItem(item, ['INCOMODIDADE']);
+                const cnaeLevel = parseInt(incomodidade, 10);
+                
+                if (cnaeLevel === 0 && !uRAllowedZones.includes(zoneQuery)) {
+                    return false;
+                }
+                
+                return cnaeLevel <= maxAllowedLevel;
+            });
+
+            if (filteredCnaes.length > 0) {
+                zoneDisplayName.textContent = zoneQuery;
+                resultsZoneSection.classList.remove('hidden');
+                zoneResultsCount.textContent = `Encontrados ${filteredCnaes.length} registros.`;
+                filteredCnaes.forEach(item => {
+                    const row = document.createElement('tr');
+                    const incomodidade = getValueFromItem(item, ['INCOMODIDADE']);
+                    const incomodidadeDisplay = formatarIncomodidadeCnae(incomodidade);
+
+                    row.className = 'hover:bg-gray-50 transition duration-150 ease-in-out';
+                    row.innerHTML = `
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">${getValueFromItem(item, ['CNAE'])}</td>
+                        <td class="px-6 py-4 whitespace-normal text-sm">${getValueFromItem(item, ['DESCRIÇÃO'])}</td>
+                        <td class="px-6 py-4 whitespace-normal text-sm">${incomodidadeDisplay}</td>
+                        <td class="px-6 py-4 whitespace-normal text-sm">${getValueFromItem(item, ['OBS'])}</td>
+                    `;
+                    resultsTableZone.appendChild(row);
+                });
+                printButton.disabled = false;
+            } else {
+                resultsZoneSection.classList.add('hidden');
+                zoneResultsCount.textContent = 'Nenhum registro encontrado.';
+                printButton.disabled = true;
+            }
+        }
+
+
+        // Processa os dados do CSV e os armazena em um mapa para busca rápida
+        function processAndSetData(data) {
+            cnaeData = [];
+            inscricaoDataMap.clear();
+
+            const uniqueCnaeMap = new Map();
+            
+            data.forEach(row => {
+                const inscricao = getValueFromItem(row, ['INSCRIÇÃO', 'INSCRIÇÃO CADASTRAL', 'inscricao']).trim();
+                const zona = getValueFromItem(row, ['ZONA_ZC']).trim();
+                const endereco = getValueFromItem(row, ['ENDEREÇO']).trim();
+                const areaTerreno = getValueFromItem(row, ['AREA_TERRENO']).trim();
+                const areaEdificada = getValueFromItem(row, ['AREA_EDIF']).trim();
+                const grupoAtv = getValueFromItem(row, ['GRUPO_ATV']).trim();
+                const cnae = getValueFromItem(row, ['CNAE']).trim();
+                const descricao = getValueFromItem(row, ['DESCRIÇÃO']);
+                const incomodidade = getValueFromItem(row, ['INCOMODIDADE']);
+                const obs = getValueFromItem(row, ['OBS']);
+
+                if (inscricao && zona) {
+                    inscricaoDataMap.set(inscricao, {
+                        inscricao: inscricao,
+                        zone: zona,
+                        endereco: endereco,
+                        areaTerreno: areaTerreno,
+                        areaEdificada: areaEdificada,
+                        grupoAtv: grupoAtv
+                    });
+                }
+                
+                if (cnae && !uniqueCnaeMap.has(cnae)) {
+                    uniqueCnaeMap.set(cnae, {
+                        CNAE: cnae,
+                        DESCRIÇÃO: descricao,
+                        INCOMODIDADE: incomodidade,
+                        OBS: obs
+                    });
+                }
+            });
+            
+            cnaeData = Array.from(uniqueCnaeMap.values());
+            inscricaoDataArray = Array.from(inscricaoDataMap.values());
+
+            const zones = Object.keys(simplifiedZoneToCategoryMapping).sort();
+            zoneSelect.innerHTML = '<option value="">Selecione uma zona</option>';
+            zones.forEach(zone => {
+                const option = document.createElement('option');
+                option.value = zone;
+                option.textContent = `${zone} - ${zoneDescriptions[zone] || 'Descrição não disponível'}`;
+                zoneSelect.appendChild(option);
+            });
+
+            inscricaoSearchInput.disabled = false;
+            cnaeSearchInput.disabled = false;
+            zoneSelect.disabled = false;
+            statusMessage.textContent = `Base de dados carregada com sucesso! ${inscricaoDataMap.size} registros de inscrição e ${cnaeData.length} registros de CNAE encontrados.`;
+        }
+        
+        // Processa os dados do CSV do MEI
+        function processAndSetMeiData(data) {
+            cnaeMeiData = [];
+            const uniqueCnaeMeiMap = new Map();
+            
+            data.forEach(row => {
+                const cnae = getValueFromItem(row, ['CNAE']).trim();
+                if (cnae && !uniqueCnaeMeiMap.has(cnae)) {
+                    uniqueCnaeMeiMap.set(cnae, {
+                        CNAE: cnae,
+                        DESCRIÇÃO: getValueFromItem(row, ['DESCRIÇÃO']),
+                        INCOMODIDADE: getValueFromItem(row, ['incomodidade_MEI']),
+                        OBS: getValueFromItem(row, ['OBS'])
+                    });
+                }
+            });
+            
+            cnaeMeiData = Array.from(uniqueCnaeMeiMap.values());
+            cnaeMeiSearchInput.disabled = false;
+            statusMessageMei.textContent = `Base de dados MEI carregada com ${cnaeMeiData.length} registros.`;
+        }
+
+
+        // Função para carregar CSV de uma URL com decodificação manual
+        async function loadCsvFromUrl(url, callback, statusElement) {
+            statusElement.textContent = 'A carregar a base de dados do repositório...';
+
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`Erro de rede ao aceder ao ficheiro: ${response.statusText}`);
+                }
+                const buffer = await response.arrayBuffer();
+                const decoder = new TextDecoder('UTF-8');
+                const decodedCsv = decoder.decode(buffer);
+
+                Papa.parse(decodedCsv, {
+                    header: true,
+                    skipEmptyLines: true,
+                    complete: function(results) {
+                        if (results.errors.length > 0) {
+                            statusElement.textContent = 'Erro ao processar a base de dados. Verifique o formato do CSV.';
+                            console.error("Erros de análise CSV:", results.errors);
+                            return;
+                        }
+                        callback(results.data);
+                    }
+                });
+            } catch (error) {
+                statusElement.textContent = `Erro fatal ao carregar o ficheiro: ${error.message}`;
+                console.error("Erro no fetch ou na decodificação:", error);
+            }
+        }
+
+        // Função para imprimir o conteúdo da página com cabeçalho dinâmico e rodapé com paginação
+        function printCurrentResults() {
+            let contentToPrint = '';
+            let finalFileName = 'Consulta de Zoneamento - Relatório';
+            let subtitleParts = [];
+            let inscricaoDetailsHtml = '';
+            let hasContent = false;
+
+            // 1. Prepara detalhes da Inscrição, se houver, e define o nome do ficheiro
+            if (activeInscricaoData) {
+                finalFileName = `Consulta de zoneamento - ${activeInscricaoData.inscricao}`;
+                const inscricaoData = activeInscricaoData;
+                const zonaDescricao = zoneDescriptions[inscricaoData.zone] || zoneDescriptions[zoneMapping[inscricaoData.zone]] || 'Descrição não disponível';
+                inscricaoDetailsHtml = `
+                    <h3 style="font-size: 1.1rem; font-weight: bold; margin-bottom: 0.2rem;">Dados do Imóvel</h3>
+                    <p><strong>Inscrição:</strong> ${inscricaoData.inscricao}</p>
+                    <p><strong>Endereço:</strong> ${inscricaoData.endereco || '-'}</p>
+                    <p><strong>Área Terreno:</strong> ${inscricaoData.areaTerreno || '-'}</p>
+                    <p><strong>Área Edificada:</strong> ${inscricaoData.areaEdificada || '-'}</p>
+                    <p><strong>Zona do Imóvel:</strong> ${inscricaoData.zone} - ${zonaDescricao}</p>
+                    <p><strong>Atividades Permitidas:</strong> ${formatarAtividadesPermitidas(inscricaoData.grupoAtv, inscricaoData.zone)}</p>
+                `;
+            }
+
+            // 2. Verifica e adiciona resultados de CNAE
+            if (!resultsCnaeSection.classList.contains('hidden')) {
+                hasContent = true;
+                const tagsList = [...cnaeSearchTags, cnaeSearchInput.value.trim()].filter(Boolean).join(', ') || 'Nenhum';
+                subtitleParts.push(`<p><strong>CNAE(s) Consultados:</strong> ${tagsList}</p>`);
+                contentToPrint += resultsCnaeSection.outerHTML;
+            }
+
+            // 3. Verifica e adiciona resultados de CNAE MEI
+            if (!resultsCnaeMeiSection.classList.contains('hidden')) {
+                hasContent = true;
+                const tagsList = [...cnaeMeiSearchTags, cnaeMeiSearchInput.value.trim()].filter(Boolean).join(', ') || 'Nenhum';
+                subtitleParts.push(`<p><strong>CNAE(s) MEI Consultados:</strong> ${tagsList}</p>`);
+                contentToPrint += `<div style="margin-top: 20px;"></div>` + resultsCnaeMeiSection.outerHTML;
+            }
+            
+            // 4. Lida com casos de busca apenas por Inscrição ou Zona
+            if (!hasContent) {
+                if (!resultsInscricaoSection.classList.contains('hidden')) {
+                    hasContent = true;
+                    contentToPrint += resultsInscricaoSection.outerHTML;
+                } else if (!resultsZoneSection.classList.contains('hidden')) {
+                    hasContent = true;
+                    const zoneData = zoneSelect.options[zoneSelect.selectedIndex];
+                    subtitleParts.push(`<p><strong>Zona Consultada:</strong> ${zoneData.value}</p>`);
+                    contentToPrint += resultsZoneSection.outerHTML;
+                }
+            }
+
+            if (!hasContent) {
+                console.error('Nenhum resultado para imprimir.');
+                return;
+            }
+            
+            // 5. Monta o HTML final para impressão
+            const printSubtitle = subtitleParts.length > 0 ? `<h3 style="font-size: 1.1rem; font-weight: bold; margin-bottom: 0.2rem;">Filtros de Busca</h3>${subtitleParts.join('')}` : '';
+            
+            const printContentHtml = `
+                <div class="print-header" style="margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid #ccc;">
+                    <h1 style="font-size: 1.2rem; font-weight: bold; margin-bottom: 0.1rem;">Relatório de Consulta de Zoneamento</h1>
+                    <p style="font-size: 0.8rem;">Baseado na Lei de Uso e Ocupação do Solo de Valinhos (Lei 6574/2023)</p>
+                    <p class="separator" style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #ccc;"><strong>Data de Emissão:</strong> ${new Date().toLocaleString('pt-BR')}</p>
+                    <div class="separator">${printSubtitle}</div>
+                    ${inscricaoDetailsHtml || ''}
+                </div>
+                ${contentToPrint}
+            `;
+
+            const originalTitle = document.title;
+            document.title = finalFileName;
+            
+            // 6. Cria o iframe e imprime
+            const printFrame = document.createElement('iframe');
+            printFrame.style.display = 'none';
+            document.body.appendChild(printFrame);
+
+            const printDocument = printFrame.contentWindow.document;
+            printDocument.open();
+            printDocument.write(`
+                <!DOCTYPE html>
+                <html lang="pt-BR">
+                <head>
+                    <meta charset="UTF-8">
+                    <title>${finalFileName}</title>
+                    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+                    <style>
+                        body { font-family: 'Inter', sans-serif; margin: 0; }
+                        h1 { font-size: 1.2rem; font-weight: bold; margin-bottom: 0.1rem; }
+                        h3 { font-size: 1.1rem; font-weight: bold; margin-top: 0.8rem; margin-bottom: 0.2rem; }
+                        p { font-size: 0.8rem; line-height: 1.2; margin: 0.2rem 0; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; table-layout: auto; page-break-inside: auto; }
+                        tr { page-break-inside: avoid; page-break-after: auto; }
+                        th, td { border: 1px solid #ddd; padding: 4px; text-align: left; word-wrap: break-word; font-size: 0.75rem; }
+                        thead { background-color: #f2f2f2 !important; print-color-adjust: exact; display: table-header-group; }
+                        .bg-green-100 { background-color: #d1fae5 !important; color: #065f46 !important; print-color-adjust: exact; }
+                        .bg-red-100 { background-color: #fee2e2 !important; color: #991b1b !important; print-color-adjust: exact; }
+                        .bg-yellow-100 { background-color: #fef3c7 !important; color: #b45309 !important; print-color-adjust: exact; }
+                        .rounded-full { border-radius: 9999px; }
+                        .px-2 { padding-left: 0.5rem; padding-right: 0.5rem; }
+                        .leading-5 { line-height: 1.25rem; }
+                        .font-semibold { font-weight: 600; }
+                        .inline-flex { display: inline-flex; align-items: center; }
+                        .text-xs { font-size: 0.75rem; }
+                        .uppercase { text-transform: uppercase; }
+                        .separator { margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #ccc; }
+                        @page {
+                            size: A4;
+                            margin: 1cm;
+                            @bottom-right {
+                                content: "Página " counter(page) " de " counter(pages);
+                                font-size: 9pt;
+                                color: #666;
+                            }
+                        }
+                    </style>
+                </head>
+                <body>
+                    ${printContentHtml}
+                </body>
+                </html>
+            `);
+            printDocument.close();
+
+            const restoreTitle = () => {
+                document.title = originalTitle;
+                window.removeEventListener('afterprint', restoreTitle);
+            };
+            window.addEventListener('afterprint', restoreTitle);
+
+            printFrame.contentWindow.onload = function() {
+                try {
+                    printFrame.contentWindow.focus();
+                    printFrame.contentWindow.print();
+                } catch(e) {
+                    console.error("A impressão falhou:", e);
+                    restoreTitle(); // Restaura o título se a impressão falhar
+                } finally {
+                    document.body.removeChild(printFrame);
+                }
+            };
+        }
+        
+        // Event Listeners
+        document.addEventListener('DOMContentLoaded', () => {
+            const csvUrl = 'https://raw.githubusercontent.com/Hadler-Stevanatto/Classificador-CNAE-6574-2023/main/CLASSIFICADOR%20DE%20CNAE%20_%206574.2023.csv';
+            const meiCsvUrl = 'https://raw.githubusercontent.com/Hadler-Stevanatto/Classificador-CNAE-6574-2023/main/CNAE_MEI_6574.2023.csv';
+            
+            loadCsvFromUrl(csvUrl, processAndSetData, statusMessage);
+            loadCsvFromUrl(meiCsvUrl, processAndSetMeiData, statusMessageMei);
+
+            inscricaoSearchInput.addEventListener('input', searchByInscricao);
+
+            // Adiciona um listener para a tecla 'Enter' na busca por inscrição
+            inscricaoSearchInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault(); // Impede o comportamento padrão do Enter
+                    inscricaoSearchInput.blur(); // Tira o foco do campo de busca
+                }
+            });
+            
+            zoneSelect.addEventListener('change', searchByZone);
+            
+            cnaeSearchInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    const tagText = cnaeSearchInput.value.trim();
+                    if (tagText && !cnaeSearchTags.includes(tagText)) {
+                        cnaeSearchTags.push(tagText);
+                        renderCnaeTags();
+                    }
+                    cnaeSearchInput.value = '';
+                } else if (e.key === 'Backspace' && cnaeSearchInput.value === '') {
+                    cnaeSearchTags.pop();
+                    renderCnaeTags();
+                }
+                filterCnaes();
+            });
+            cnaeSearchInput.addEventListener('input', filterCnaes);
+
+            cnaeMeiSearchInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    const tagText = cnaeMeiSearchInput.value.trim();
+                    if (tagText && !cnaeMeiSearchTags.includes(tagText)) {
+                        cnaeMeiSearchTags.push(tagText);
+                        renderCnaeMeiTags();
+                    }
+                    cnaeMeiSearchInput.value = '';
+                } else if (e.key === 'Backspace' && cnaeMeiSearchInput.value === '') {
+                    cnaeMeiSearchTags.pop();
+                    renderCnaeMeiTags();
+                }
+                filterCnaesMei();
+            });
+            cnaeMeiSearchInput.addEventListener('input', filterCnaesMei);
+
+            printButton.addEventListener('click', printCurrentResults);
+        });
+
+    </script>
+</body>
+</html>
+
